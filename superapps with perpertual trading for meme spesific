@@ -1,0 +1,122 @@
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+contract MemeFiSuperApp {
+
+    address public owner;
+
+    struct MemeToken {
+        string name;
+        address tokenAddress;
+        bool active;
+    }
+
+    struct VirtualPosition {
+        address trader;
+        address token;
+        uint256 entryPrice;
+        uint256 amount;
+        bool isLong;
+        bool active;
+    }
+
+    mapping(address => MemeToken) public memeTokens;
+    mapping(uint256 => VirtualPosition) public positions;
+
+    uint256 public positionCount;
+
+    event TokenAdded(address token, string name);
+    event VirtualPositionOpened(uint256 id, address trader);
+    event PositionClosed(uint256 id, int256 pnl);
+
+    constructor() {
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    // Register meme token
+    function addMemeToken(
+        address token,
+        string memory name
+    ) external onlyOwner {
+        memeTokens[token] = MemeToken(
+            name,
+            token,
+            true
+        );
+
+        emit TokenAdded(token, name);
+    }
+
+    // Open virtual LONG / SHORT position
+    function openVirtualPosition(
+        address token,
+        uint256 entryPrice,
+        uint256 amount,
+        bool isLong
+    ) external {
+        require(memeTokens[token].active, "Token inactive");
+        require(entryPrice > 0, "Invalid price");
+        require(amount > 0, "Invalid amount");
+
+        positionCount++;
+
+        positions[positionCount] = VirtualPosition(
+            msg.sender,
+            token,
+            entryPrice,
+            amount,
+            isLong,
+            true
+        );
+
+        emit VirtualPositionOpened(
+            positionCount,
+            msg.sender
+        );
+    }
+
+    // Calculate simulated PnL
+    function calculatePnL(
+        uint256 id,
+        uint256 currentPrice
+    ) public view returns (int256) {
+
+        VirtualPosition memory p = positions[id];
+
+        require(p.active, "Position inactive");
+
+        int256 difference = int256(currentPrice)
+            - int256(p.entryPrice);
+
+        if (!p.isLong) {
+            difference = -difference;
+        }
+
+        return (difference * int256(p.amount))
+            / int256(p.entryPrice);
+    }
+
+    // Close virtual position
+    function closeVirtualPosition(
+        uint256 id,
+        uint256 currentPrice
+    ) external {
+
+        VirtualPosition storage p = positions[id];
+
+        require(p.trader == msg.sender, "Not trader");
+        require(p.active, "Already closed");
+
+        int256 pnl = calculatePnL(id, currentPrice);
+
+        p.active = false;
+
+        emit PositionClosed(id, pnl);
+    }
+}
